@@ -5,11 +5,11 @@ from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
 
 import torch.nn as nn
+import torch.nn.functional as F
 
 class AdaptiveDiffusionLayer(nn.Module):
     def __init__(self, in_features, out_features):
         super(AdaptiveDiffusionLayer, self).__init__()
-        # t is the neighborhood radius; it is learnable [cite: 504]
         self.t = nn.Parameter(th.FloatTensor(1).fill_(1.0)) 
         self.weight = Parameter(th.FloatTensor(in_features, out_features))
         self.reset_parameters()
@@ -19,22 +19,38 @@ class AdaptiveDiffusionLayer(nn.Module):
         self.weight.data.uniform_(-stdv, stdv)
 
     def forward(self, x, adj):
-        # Approximation of Heat Kernel: exp(-t(I - adj)) [cite: 495]
-        # For a hackathon, 1st or 2nd order Taylor expansion is efficient:
-        # P_diff = (1 - t) * I + t * adj
-        identity = th.eye(adj.size(0)).to(adj.device)
-        adj_diff = (1 - self.t) * identity + self.t * adj
-        
+        # 1. Transform features: (Nodes x In) * (In x Out) -> (Nodes x Out)
+        # This is our 'support' or 'XW'
         support = th.spmm(x, self.weight)
-        return th.spmm(adj_diff, support)
+        
+        # 2. Calculate the Identity term: (1 - t) * (XW)
+        term_identity = (1 - self.t) * support
+        
+        # 3. Calculate the Adjacency term: t * (A * (XW))
+        # Use spmm for sparse-dense multiplication to save memory
+        term_adj = self.t * th.spmm(adj, support)
+        
+        # 4. Final output: (1-t)XW + tAXW
+        return term_identity + term_adj
 
 # Update your GCN class to use the new layer
 class ADC_GCN(Module):
     def __init__(self, nfeat, nhid, nclass, dropout):
         super(ADC_GCN, self).__init__()
+        # Initializing the two layers using Adaptive Diffusion 
         self.gc1 = AdaptiveDiffusionLayer(nfeat, nhid)
         self.gc2 = AdaptiveDiffusionLayer(nhid, nclass)
         self.dropout = dropout
+
+    def forward(self, x, adj):
+        # First layer: Diffusion + ReLU + Dropout [cite: 537, 542]
+        x = self.gc1(x, adj)
+        x = F.relu(x)
+        x = F.dropout(x, self.dropout, training=self.training)
+        
+        # Second layer: Final classification embedding 
+        x = self.gc2(x, adj)
+        return x
 
 
 class GraphConvolution(Module):

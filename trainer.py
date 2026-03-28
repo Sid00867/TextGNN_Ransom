@@ -28,15 +28,23 @@ warnings.filterwarnings("ignore")
 def get_train_test(target_fn):
     train_lst = list()
     test_lst = list()
+    target_dict = {} # Stores the label for each specific node ID
     with read_file(target_fn, mode="r") as fin:
-        for indx, item in enumerate(fin):
-            if item.split("\t")[1] in {"train", "training", "20news-bydate-train"}:
-                train_lst.append(indx)
+        for item in fin:
+            parts = item.strip().split("\t")
+            if len(parts) < 3:
+                continue
+            node_id = int(parts[0])
+            split = parts[1]
+            label = int(parts[2])
+            
+            target_dict[node_id] = label
+            if split in {"train", "training"}:
+                train_lst.append(node_id)
             else:
-                test_lst.append(indx)
+                test_lst.append(node_id)
 
-    return train_lst, test_lst
-
+    return train_lst, test_lst, target_dict
 
 class PrepareData:
     def __init__(self, args):
@@ -48,10 +56,12 @@ class PrepareData:
         graph = nx.read_weighted_edgelist(f"{self.graph_path}/{args.dataset}.txt"
                                           , nodetype=int)
         print_graph_detail(graph)
-        adj = nx.to_scipy_sparse_matrix(graph,
+        
+        # Compatible with NetworkX 3.x and NumPy 1.24+
+        adj = nx.to_scipy_sparse_array(graph,
                                         nodelist=list(range(graph.number_of_nodes())),
                                         weight='weight',
-                                        dtype=np.float)
+                                        dtype=float)
 
         adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
 
@@ -74,19 +84,23 @@ class PrepareData:
 
         # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
         # target
-
         target_fn = f"data/text_dataset/{self.args.dataset}.txt"
-        target = np.array(pd.read_csv(target_fn,
-                                      sep="\t",
-                                      header=None)[2])
-        target2id = {label: indx for indx, label in enumerate(set(target))}
-        self.target = [target2id[label] for label in target]
-        self.nclass = len(target2id)
+        
+        # Call the updated function to get IDs and label mapping
+        self.train_lst, self.test_lst, target_dict = get_train_test(target_fn)
+
+        # Initialize a full target array of size 44,110 with zeros
+        self.target = np.zeros(self.nfeat_dim, dtype=int)
+        
+        # Populate labels ONLY for the nodes mentioned in malware.txt
+        for node_id, label in target_dict.items():
+            self.target[node_id] = label
+            
+        self.nclass = len(set(target_dict.values()))
 
         # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
         # train val test split
-
-        self.train_lst, self.test_lst = get_train_test(target_fn)
+        # train_lst and test_lst are now populated with the correct Node IDs
 
 
 class TextGCNTrainer:
@@ -116,7 +130,12 @@ class TextGCNTrainer:
         self.model = self.model.to(self.device)
 
         self.optimizer = th.optim.Adam(self.model.parameters(), lr=self.args.lr)
-        self.criterion = th.nn.CrossEntropyLoss()
+        
+        # Option A: Weighted Cross-Entropy Loss
+        # Assuming class 0 = Benign (97%) and class 1 = Malware (3%)
+        # We give Malware a much higher weight (35.0) to force the model to learn it.
+        weights = th.tensor([1.0, 35.0]).to(self.device)
+        self.criterion = th.nn.CrossEntropyLoss(weight=weights)
 
         self.model_param = sum(param.numel() for param in self.model.parameters())
         print('# model parameters:', self.model_param)
@@ -177,7 +196,7 @@ class TextGCNTrainer:
 
             self.set_description(desc)
 
-            if self.earlystopping(val_desc["val_loss"]):
+            if self.earlystopping(val_desc["val_loss"], model=self.model):
                 break
 
     @th.no_grad()
@@ -219,8 +238,8 @@ def main(dataset, times):
     args.nhid = 200
     args.max_epoch = 300
     args.dropout = 0.5
-    args.val_ratio = 0.1
-    args.early_stopping = 10
+    args.val_ratio = 0.002
+    args.early_stopping = 30
     args.lr = 0.01
     model = ADC_GCN
 

@@ -50,37 +50,14 @@ def accuracy(pred, targ):
 class CudaUse(object):
     def __init__(self):
         self.cuda_available = th.cuda.is_available()
-        if self.cuda_available:
-            from fastai.utils.pynvml_gate import load_pynvml_env
-            self.pynvml = load_pynvml_env()
 
     def get_cuda_id(self):
-        if self.cuda_available:
-            gpu_mem = sorted(self.gpu_mem_get_all(), key=lambda item: item.free, reverse=True)
-            low_use_id = gpu_mem[0].id
-            return th.device(f'cuda:{low_use_id}')
-        else:
-            return th.device('cpu')
-
-    def gpu_mem_get_all(self):
-        "get total, used and free memory (in MBs) for each available gpu"
-        return list(map(self.gpu_mem_get, range(self.pynvml.nvmlDeviceGetCount())))
+        # Simply returns the standard cuda device if available
+        return th.device('cuda') if self.cuda_available else th.device('cpu')
 
     def gpu_mem_get(self, _id=None):
-        """get total, used and free memory (in MBs) for gpu `id`. if `id` is not passed,
-        currently selected torch device is used"""
-        from collections import namedtuple
-        GPUMemory = namedtuple('GPUMemory', ['total', 'free', 'used', 'id'])
-
-        if _id is None:
-            _id = th.cuda.current_device()
-        try:
-            handle = self.pynvml.nvmlDeviceGetHandleByIndex(_id)
-            info = self.pynvml.nvmlDeviceGetMemoryInfo(handle)
-            # return GPUMemory(*(map(b2mb, [info.total, info.free, info.used])), id=_id)
-            return b2mb(info.used)
-        except:
-            return GPUMemory(0, 0, 0, -1)
+        # Returns 0 to satisfy the logging requirement without crashing
+        return 0
 
 
 def read_file(path, mode='r', encoding=None):
@@ -155,15 +132,6 @@ class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
 
     def __init__(self, patience=7, verbose=False, delta=0):
-        """
-        Args:
-            patience (int): How long to wait after last time validation loss improved.
-                            Default: 7
-            verbose (bool): If True, prints a message for each validation loss improvement.
-                            Default: False
-            delta (float): Minimum change in the monitored quantity to qualify as an improvement.
-                            Default: 0
-        """
         self.patience = patience
         self.verbose = verbose
         self.counter = 0
@@ -171,15 +139,15 @@ class EarlyStopping:
         self.early_stop = False
         self.val_loss_min = np.Inf
         self.delta = delta
-        self.model_path = "hdd_data/prepare_dataset/model/model.pt"
+        # Change: Saving locally so you can see the file in your project folder
+        self.model_path = "model.pt"
 
     def __call__(self, val_loss, model=None):
-
         score = -val_loss
 
         if self.best_score is None:
             self.best_score = score
-            # self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(val_loss, model) # Change: Uncommented
         elif score < self.best_score + self.delta:
             self.counter += 1
             if self.verbose:
@@ -189,14 +157,15 @@ class EarlyStopping:
                 return True
         else:
             self.best_score = score
-            # self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(val_loss, model) # Change: Uncommented
             self.counter = 0
 
     def save_checkpoint(self, val_loss, model):
-        '''Saves model when validation loss decrease.'''
+        '''Saves model when validation loss decreases.'''
         if self.verbose:
-            print(
-                    f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+            print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}). Saving model ...')
+        
+        # Ensures the model is saved correctly
         th.save(model.state_dict(), self.model_path)
         self.val_loss_min = val_loss
 
