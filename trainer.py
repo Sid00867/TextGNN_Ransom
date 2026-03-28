@@ -8,7 +8,7 @@ import pandas as pd
 import torch as th
 from sklearn.model_selection import train_test_split
 
-from layer import GCN
+from layer import ADC_GCN, GCN
 from utils import accuracy
 from utils import macro_f1
 from utils import CudaUse
@@ -217,12 +217,12 @@ def main(dataset, times):
 
     args.device = th.device('cuda') if th.cuda.is_available() else th.device('cpu')
     args.nhid = 200
-    args.max_epoch = 200
+    args.max_epoch = 300
     args.dropout = 0.5
     args.val_ratio = 0.1
     args.early_stopping = 10
-    args.lr = 0.02
-    model = GCN
+    args.lr = 0.01
+    model = ADC_GCN
 
     print(args)
 
@@ -260,7 +260,8 @@ if __name__ == '__main__':
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # for d in ["mr", "ohsumed", "R52", "R8", "20ng"]:
     #     main(d)
-    main("mr", 1)
+    # Change from main("R52", 1) to:
+    main("malware", 1)
     # main("ohsumed")
     # main("R8", 1)
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>

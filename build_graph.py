@@ -15,6 +15,10 @@ from tqdm import tqdm
 
 from utils import print_graph_detail
 
+# Based on the five keystones: Network, Asymmetric Key, C&C, Encryption, and Ransom Info
+# In build_graph.py, use the IDs as strings since your TXT conversion used strings
+SENSITIVE_APIS = {"202", "141", "65", "117", "270", "297", "82", "240"}
+
 
 def get_window(content_lst, window_size):
     """
@@ -40,12 +44,16 @@ def get_window(content_lst, window_size):
                 window = words[j: j + window_size]
                 windows.append(list(set(window)))
 
+        # Change this part in get_window()
         for window in windows:
             for word in window:
                 word_window_freq[word] += 1
 
-            for word_pair in itertools.combinations(window, 2):
-                word_pair_count[word_pair] += 1
+            # Replace itertools.combinations(window, 2) with sequential order:
+            for i in range(len(window)):
+                for j in range(i + 1, len(window)):
+                    # word_pair_count[(i, j)] != word_pair_count[(j, i)]
+                    word_pair_count[(window[i], window[j])] += 1
 
         windows_len += len(windows)
     return word_window_freq, word_pair_count, windows_len
@@ -62,18 +70,24 @@ def cal_pmi(W_ij, W, word_freq_1, word_freq_2):
 
 def count_pmi(windows_len, word_pair_count, word_window_freq, threshold):
     word_pmi_lst = list()
-    for word_pair, W_i_j in tqdm(word_pair_count.items(), desc="Calculate pmi between words"):
+    alpha = 35  # The weight growth factor 
+    
+    for word_pair, W_i_j in tqdm(word_pair_count.items(), desc="Calculate COIR-PMI"):
         word_freq_1 = word_window_freq[word_pair[0]]
         word_freq_2 = word_window_freq[word_pair[1]]
 
         pmi = cal_pmi(W_i_j, windows_len, word_freq_1, word_freq_2)
         if pmi <= threshold:
             continue
+            
+        # Apply Alpha Factor if either node is sensitive [cite: 462]
+        if word_pair[0] in SENSITIVE_APIS or word_pair[1] in SENSITIVE_APIS:
+            pmi = pmi * alpha
+            
         word_pmi_lst.append([word_pair[0], word_pair[1], pmi])
     return word_pmi_lst
 
-
-def get_pmi_edge(content_lst, window_size=20, threshold=0.):
+def get_pmi_edge(content_lst, window_size=7, threshold=0.):
     if isinstance(content_lst, str):
         content_lst = list(open(content_lst, "r"))
     print("pmi read file len:", len(content_lst))
@@ -108,7 +122,7 @@ class BuildGraph:
         self.save()
 
     def get_pmi_edge(self):
-        pmi_edge_lst, self.pmi_time = get_pmi_edge(self.content, window_size=20, threshold=0.0)
+        pmi_edge_lst, self.pmi_time = get_pmi_edge(self.content, window_size=7, threshold=0.0)
         print("pmi time:", self.pmi_time)
 
         for edge_item in pmi_edge_lst:
@@ -165,7 +179,7 @@ class BuildGraph:
         self.node_num = tfidf_vec.shape[0]
 
         # 映射单词
-        vocab_lst = text_tfidf["vect"].get_feature_names()
+        vocab_lst = text_tfidf["vect"].get_feature_names_out()
         print("vocab_lst len:", len(vocab_lst))
         for ind, word in enumerate(vocab_lst):
             self.word2id[word] = ind
@@ -183,11 +197,8 @@ class BuildGraph:
 
 
 def main():
-    BuildGraph("mr")
-    BuildGraph("ohsumed")
-    BuildGraph("R52")
-    BuildGraph("R8")
-    BuildGraph("20ng")
+    # Change from BuildGraph("R52") to:
+    BuildGraph("malware")
 
 
 if __name__ == '__main__':

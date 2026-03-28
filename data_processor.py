@@ -6,6 +6,9 @@ import numpy as np
 
 from tqdm import tqdm
 
+import nltk
+nltk.download('stopwords')
+
 
 class StringProcess(object):
     def __init__(self):
@@ -27,9 +30,9 @@ class StringProcess(object):
         string = re.sub(r"\'ll", " \'ll", string)
         string = re.sub(r",", " , ", string)
         string = re.sub(r"!", " ! ", string)
-        string = re.sub(r"\(", " \( ", string)
-        string = re.sub(r"\)", " \) ", string)
-        string = re.sub(r"\?", " \? ", string)
+        string = re.sub(r"\(", r" ( ", string)
+        string = re.sub(r"\)", r" ) ", string)
+        string = re.sub(r"\?", r" ? ", string)
         string = re.sub(r"\s{2,}", " ", string)
 
         return string.strip().lower()
@@ -150,7 +153,8 @@ class CorpusProcess:
 
 
 def main():
-    CorpusProcess("R52")
+# Change from CorpusProcess("R52") to:
+    CorpusProcess("malware")
     # CorpusProcess("20ng")
     # CorpusProcess("mr")
     # CorpusProcess("ohsumed")
